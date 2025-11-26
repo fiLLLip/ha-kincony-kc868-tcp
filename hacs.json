@@ -1,5 +1,5 @@
 {
-  "name": "Kincony SHA",
+  "name": "Kincony KC868 TCP",
   "domains": ["kincony-sha"],
   "render_readme": true
 }

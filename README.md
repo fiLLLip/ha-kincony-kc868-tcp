@@ -1,3 +1,5 @@
+Kincony KC868 TCP integration for Home Assistant (switch-only, TCP control)
+
 Installation
 
 1. Copy the `custom_components/kincony-sha/` directory into your Home Assistant `custom_components` folder.

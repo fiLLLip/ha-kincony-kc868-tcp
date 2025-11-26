@@ -1,7 +1,7 @@
 {
   "domain": "kincony-sha",
-  "name": "Kincony Sha",
-  "documentation": "https://github.com/fiLLLip/hass-components-sha",
+  "name": "Kincony KC868 TCP",
+  "documentation": "https://github.com/fiLLLip/ha-kincony-kc868-tcp",
   "requirements": [],
   "dependencies": [],
   "codeowners": [],
