@@ -19,3 +19,10 @@ Notes
 
 - Only switch entities are exposed. If you want light entities, use Home Assistant’s “Switch as Light” helper to wrap a switch as a light.
 - YAML configuration is no longer needed or supported; everything is configured through the UI config flow.
+
+Development / testing
+
+- Install dev deps in a Python 3.13 virtualenv: `pip install -r requirements_test.txt`
+- Lint: `ruff check .`
+- Type check: `mypy`
+- Tests: `pytest`

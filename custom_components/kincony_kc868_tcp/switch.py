@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
@@ -27,7 +27,10 @@ async def async_setup_entry(
         CONF_CHANNEL_COUNT, entry.data.get(CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT)
     )
 
-    entities = [KinconySwitch(client=client, channel=index) for index in range(1, channel_count + 1)]
+    entities = [
+        KinconySwitch(client=client, channel=index)
+        for index in range(1, channel_count + 1)
+    ]
 
     async_add_entities(entities)
 
@@ -58,7 +61,10 @@ class KinconySwitch(SwitchEntity):
             self._attr_available = True
         except Exception as err:
             _LOGGER.error(
-                "Failed to poll channel %s on %s: %s", self._channel, self._client.host, err
+                "Failed to poll channel %s on %s: %s",
+                self._channel,
+                self._client.host,
+                err,
             )
             self._attr_available = False
 
@@ -67,7 +73,9 @@ class KinconySwitch(SwitchEntity):
             await self._client.async_turn_on(self._channel)
         except Exception as err:
             self._attr_available = False
-            raise HomeAssistantError(f"Failed to turn on channel {self._channel}") from err
+            raise HomeAssistantError(
+                f"Failed to turn on channel {self._channel}"
+            ) from err
 
         self._attr_is_on = True
         self._attr_available = True
@@ -77,7 +85,9 @@ class KinconySwitch(SwitchEntity):
             await self._client.async_turn_off(self._channel)
         except Exception as err:
             self._attr_available = False
-            raise HomeAssistantError(f"Failed to turn off channel {self._channel}") from err
+            raise HomeAssistantError(
+                f"Failed to turn off channel {self._channel}"
+            ) from err
 
         self._attr_is_on = False
         self._attr_available = True

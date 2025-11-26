@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import socket
 import threading
 import time
-import contextlib
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -117,13 +117,17 @@ class KConnection:
         result = self.send2KWithLock("on")
         x = re.match(r"RELAY-SET-\d+,\d+,(\d+),OK", result)
         if not x or x.group(1) != "1":
-            _LOGGER.warning("Unexpected turn on response for %s: %s", self.index, result)
+            _LOGGER.warning(
+                "Unexpected turn on response for %s: %s", self.index, result
+            )
 
     def turnOff(self) -> None:
         result = self.send2KWithLock("off")
         x = re.match(r"RELAY-SET-\d+,\d+,(\d+),OK", result)
         if not x or x.group(1) != "0":
-            _LOGGER.warning("Unexpected turn off response for %s: %s", self.index, result)
+            _LOGGER.warning(
+                "Unexpected turn off response for %s: %s", self.index, result
+            )
 
     def getStatus(self) -> bool:
         result = self.send2KWithLock("get")

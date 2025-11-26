@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import logging
-import voluptuous as vol
+from typing import Any
 
+import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.config_entries import ConfigEntry
 
 from . import KinconyClient
 from .const import CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT, DEFAULT_PORT, DOMAIN
@@ -18,13 +19,17 @@ from .const import CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT, DEFAULT_PORT, DOMA
 _LOGGER = logging.getLogger(__name__)
 
 
-class KinconyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class KinconyConfigFlow(
+    config_entries.ConfigFlow, domain=DOMAIN  # type: ignore[misc, call-arg]
+):
     """Handle a config flow for Kincony SHA."""
 
     VERSION = 1
 
-    async def async_step_user(self, user_input=None) -> FlowResult:
-        errors = {}
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             try:
@@ -41,7 +46,9 @@ class KinconyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_HOST: user_input[CONF_HOST],
                         CONF_PORT: user_input[CONF_PORT],
-                        CONF_CHANNEL_COUNT: info.get(CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT),
+                        CONF_CHANNEL_COUNT: info.get(
+                            CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT
+                        ),
                     },
                 )
 
@@ -59,7 +66,7 @@ class KinconyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_import(self, user_input: dict) -> FlowResult:
+    async def async_step_import(self, user_input: dict[str, Any]) -> FlowResult:
         """Handle import from YAML."""
         return await self.async_step_user(user_input)
 
@@ -67,9 +74,9 @@ class KinconyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 async def async_validate_input(
     hass: HomeAssistant, data: dict[str, str | int]
-) -> dict[str, str]:
+) -> dict[str, str | int]:
     """Validate the user input allows us to connect."""
-    host: str = data[CONF_HOST]
+    host: str = str(data[CONF_HOST])
     port: int = int(data[CONF_PORT])
     client = KinconyClient(hass, host, port)
 
@@ -99,7 +106,9 @@ class KinconyOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         self.config_entry = config_entry
 
-    async def async_step_init(self, user_input=None) -> FlowResult:
+    async def async_step_init(
+        self, user_input: dict[str, int] | None = None
+    ) -> FlowResult:
         if user_input is not None:
             return self.async_create_entry(
                 title="",
@@ -124,6 +133,8 @@ class KinconyOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
 
-async def async_get_options_flow(config_entry: ConfigEntry):
+async def async_get_options_flow(
+    config_entry: ConfigEntry,
+) -> KinconyOptionsFlowHandler:
     """Return the options flow handler."""
     return KinconyOptionsFlowHandler(config_entry)
