@@ -1,111 +1,66 @@
-"""Support for custom shell commands to turn a switch on/off."""
+"""Switch platform for Kincony SHA."""
+
+from __future__ import annotations
+
 import logging
-import subprocess
+from typing import Any
 
-import voluptuous as vol
+from homeassistant.components.switch import SwitchEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from homeassistant.components.switch import (
-	ENTITY_ID_FORMAT,
-	PLATFORM_SCHEMA,
-	SwitchEntity as SwitchDevice,
-)
-from homeassistant.const import (
-	CONF_FRIENDLY_NAME,
-	CONF_SWITCHES,
-	CONF_HOST,
-	CONF_PORT,
-)
-import homeassistant.helpers.config_validation as cv
-
-from . import DATA_DEVICE_REGISTER, KConnection
+from . import KinconyClient
+from .const import CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-SWITCH_SCHEMA = vol.Schema(
-	{
-		vol.Optional(CONF_FRIENDLY_NAME): cv.string,
-		vol.Optional("k_id"): cv.string,
-	}
-)
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-	{
-		vol.Required(CONF_HOST): cv.string,
-		vol.Optional(CONF_PORT, default=4196): cv.port,
-		vol.Required(CONF_SWITCHES): cv.schema_with_slug_keys(SWITCH_SCHEMA)
-	}
-)
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    """Set up Kincony switches from a config entry."""
+    client: KinconyClient = hass.data[DOMAIN][entry.entry_id]
+    channel_count: int = entry.options.get(
+        CONF_CHANNEL_COUNT, entry.data.get(CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT)
+    )
 
+    entities = [KinconySwitch(client=client, channel=index) for index in range(1, channel_count + 1)]
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
-	"""Find and return switches controlled by shell commands."""
-	devices = config.get(CONF_SWITCHES, {})
-	switches = []
-
-	host = config.get(CONF_HOST, {})
-	port = config.get(CONF_PORT, {})
-	address = (host, port)
-	transport = hass.data[DATA_DEVICE_REGISTER]
-	transport.setAddress(address)
-
-	for object_id, device_config in devices.items():
-
-		switches.append(
-			CommandSwitch(
-				hass,
-				object_id,
-				device_config.get(CONF_FRIENDLY_NAME, object_id),
-				device_config.get("k_id"),
-				transport,
-			)
-		)
-
-	if not switches:
-		_LOGGER.error("No switches added")
-		return False
-
-	add_entities(switches)
+    async_add_entities(entities)
 
 
-class CommandSwitch(SwitchDevice):
-	"""Representation a switch that can be toggled using shell commands."""
+class KinconySwitch(SwitchEntity):
+    """Representation of a Kincony relay switch."""
 
-	def __init__(
-		self,
-		hass,
-		object_id,
-		friendly_name,
-		k_id,
-		transport,
-	):
-		"""Initialize the switch."""
-		self._hass = hass
-		self.entity_id = ENTITY_ID_FORMAT.format(object_id)
-		self._name = friendly_name
-		self._state = False
-		self._k_id = k_id
-		self._clinet = KConnection(transport, k_id)
+    _attr_should_poll = True
 
-	@property
-	def should_poll(self):
-		"""Only poll if we have state command."""
-		return True
+    def __init__(self, client: KinconyClient, channel: int) -> None:
+        self._client = client
+        self._channel = channel
+        self._attr_name = f"Relay {channel}"
+        self._attr_unique_id = f"{client.host}-relay-{channel}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, client.host)},
+            name=f"Kincony ({client.host})",
+            manufacturer="Kincony",
+            model="SHA",
+            configuration_url=f"http://{client.host}",
+        )
+        self._attr_is_on = False
 
-	@property
-	def name(self):
-		"""Return the name of the switch."""
-		return self._name
+    async def async_update(self) -> None:
+        try:
+            self._attr_is_on = await self._client.async_get_status(self._channel)
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to poll channel %s on %s: %s", self._channel, self._client.host, err
+            )
 
-	@property
-	def is_on(self):
-		"""Return true if device is on."""
-		return self._state
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._client.async_turn_on(self._channel)
+        self._attr_is_on = True
 
-	def update(self):
-		self._state = self._clinet.getStatus()
-
-	def turn_on(self, **kwargs):
-		self._clinet.turnOn()
-
-	def turn_off(self, **kwargs):
-		self._clinet.turnOff()
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._client.async_turn_off(self._channel)
+        self._attr_is_on = False

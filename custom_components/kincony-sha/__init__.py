@@ -1,148 +1,193 @@
-#!/usr/bin/python
-import getopt
-import socket
-import sys
-import re
-import time
-import os
-import subprocess
-import logging
-import threading
-from homeassistant.const import (
-	CONF_HOST,
-	CONF_PORT,
-)
+"""Kincony SHA base setup."""
 
-DATA_DEVICE_REGISTER = "k_device_register"
-DOMAIN = "kincony-sha"
+from __future__ import annotations
+
+import logging
+import re
+import socket
+import threading
+import time
+from typing import Any
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
+
+from .const import DEFAULT_PORT, DOMAIN, PLATFORMS
 
 _LOGGER = logging.getLogger(__name__)
-# _LOGGER.setLevel(logging.DEBUG)
 
 
-class KTransport(object):
-	"""docstring for KTransport"""
-	def __init__(self):
-		super(KTransport, self).__init__()
-		self.lock = threading.Lock()
-		self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.s.settimeout(5)
-		self.connected = False
+class KTransport:
+    """Basic TCP transport with a shared socket and lock."""
 
-	def _send(self, command):
-		self.s.sendto(command.encode(), self.address)
+    def __init__(self, host: str, port: int) -> None:
+        self.address = (host, port)
+        self.lock = threading.Lock()
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.settimeout(5)
+        self.connected = False
 
-	def _read(self):
-		return self.s.recv(1024).decode('utf-8')
+    def _send(self, command: str) -> None:
+        self.s.sendto(command.encode(), self.address)
 
-	def setAddress(self, address):
-		self.address = address
+    def _read(self) -> str:
+        return self.s.recv(1024).decode("utf-8")
 
-	def getLock(self):
-		return self.lock
+    def getLock(self) -> threading.Lock:
+        return self.lock
 
-	def call(self, command):
-		if (not self.connected):
-			try:
-				self.s.connect(self.address)
-				self.connected = True
-			except:
-				_LOGGER.error("cannot connect socket")
+    def call(self, command: str) -> str:
+        if not self.connected:
+            try:
+                self.s.connect(self.address)
+                self.connected = True
+            except Exception as exc:
+                raise ConnectionError("Cannot connect socket") from exc
 
-		try:
-			self._send(command)
-		except BrokenPipeError:
-			self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			self.s.settimeout(5)
-			self.connected = False
-			time.sleep(3)
-			self.call(command)
+        try:
+            self._send(command)
+        except BrokenPipeError:
+            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.s.settimeout(5)
+            self.connected = False
+            time.sleep(1)
+            return self.call(command)
 
-		try:
-			result = self._read()
-		except Exception as e:
-			_LOGGER.error("socket read error")
-			_LOGGER.error(e)
-			self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			self.s.settimeout(5)
-			self.connected = False
+        try:
+            result = self._read()
+        except Exception as exc:
+            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.s.settimeout(5)
+            self.connected = False
+            raise ConnectionError("Socket read error") from exc
 
-		return result
+        return result
 
 
-async def async_setup(hass, config):
-	_LOGGER.info("k init")
-	hass.data[DATA_DEVICE_REGISTER] = KTransport()
-	return True
+class KConnection:
+    """High-level Kincony commands for a given relay index."""
 
-class KConnection(object):
-	def __init__(self, s, index):
-		super(KConnection, self).__init__()
-		self.s = s
-		self.index = index
-		
-	def send2K(self, action_type):
-		first_run = False
-		fix_every_time = False
-		kcode = '255'		
+    def __init__(self, s: KTransport, index: str) -> None:
+        self.s = s
+        self.index = index
 
-		if first_run:
-			result = self.s.call('RELAY-SCAN_DEVICE-NOW')
-			_LOGGER.info("scan:" + result)
+    def send2K(self, action_type: str) -> str:
+        kcode = "255"
 
-		if first_run or fix_every_time:
-			result = self.s.call('RELAY-TEST-NOW')
-			_LOGGER.info("test:" + result)
+        if action_type == "on" and self.index == "all":
+            command = "RELAY-SET_ALL-" + kcode + ",255"
+        elif action_type == "off" and self.index == "all":
+            command = "RELAY-SET_ALL-" + kcode + ",0"
+        elif action_type == "on":
+            command = "RELAY-SET-" + kcode + "," + self.index + ",1"
+        elif action_type == "off":
+            command = "RELAY-SET-" + kcode + "," + self.index + ",0"
+        elif action_type == "get":
+            command = "RELAY-READ-" + kcode + "," + self.index
+        elif action_type == "test":
+            command = "RELAY-TEST-NOW"
+        elif action_type == "scan":
+            command = "RELAY-SCAN_DEVICE-NOW"
+        else:
+            command = "zzz"
 
-		if action_type == 'on' and self.index == 'all':
-			command = 'RELAY-SET_ALL-' + kcode + ',255'
-		elif action_type == 'off' and self.index == 'all':
-			command = 'RELAY-SET_ALL-' + kcode + ',0'
-		elif action_type == 'on':
-			command = 'RELAY-SET-' + kcode + ',' + self.index + ',1'
-		elif action_type == 'off':
-			command = 'RELAY-SET-' + kcode + ',' + self.index + ',0'
-		elif action_type == 'get':
-			command = 'RELAY-READ-' + kcode + ',' + self.index
-		elif action_type == 'test':
-			command = 'RELAY-TEST-NOW'
-		elif action_type == 'scan':
-			command = 'RELAY-SCAN_DEVICE-NOW'
-		elif action_type == 'error':
-			command = 'zzz'
+        result = self.s.call(command)
+        _LOGGER.debug("request:%s response:%s", command, result)
+        return result
 
-		result = self.s.call(command)
+    def send2KWithLock(self, action_type: str) -> str:
+        with self.s.getLock():
+            result = self.send2K(action_type)
+        return result
 
-		# self.s.close()
+    def turnOn(self) -> None:
+        result = self.send2KWithLock("on")
+        x = re.match(r"RELAY-SET-\d+,\d+,(\d+),OK", result)
+        if not x or x.group(1) != "1":
+            _LOGGER.warning("Unexpected turn on response for %s: %s", self.index, result)
 
-		_LOGGER.debug("request:" + command)
-		_LOGGER.debug("response:" + result)
+    def turnOff(self) -> None:
+        result = self.send2KWithLock("off")
+        x = re.match(r"RELAY-SET-\d+,\d+,(\d+),OK", result)
+        if not x or x.group(1) != "0":
+            _LOGGER.warning("Unexpected turn off response for %s: %s", self.index, result)
 
-		return result
-
-	def send2KWithLock(self, action_type):
-		with self.s.getLock():
-			result = self.send2K(action_type)
-		return result
-
-	def turnOn(self):
-		result = self.send2KWithLock('on')
-		x = re.match("RELAY-SET-\\d+,\\d+,(\\d+),OK", result)
-		if x.group(1) != "1":
-			_LOGGER.warning("exit 5")
+    def getStatus(self) -> bool:
+        result = self.send2KWithLock("get")
+        x = re.match(r"RELAY-READ-\d+,\d+,(\d+),OK", result)
+        if not x:
+            raise ValueError(f"Cannot parse status for {self.index}: {result}")
+        return x.group(1) == "1"
 
 
-	def turnOff(self):
-		result = self.send2KWithLock('off')
-		x = re.match("RELAY-SET-\\d+,\\d+,(\\d+),OK", result)
-		if x.group(1) != "0":
-			_LOGGER.warning("exit 6")	
+class KinconyClient:
+    """Helper that wraps Kincony calls on the executor."""
 
-	def getStatus(self):
-		result = self.send2KWithLock('get')
-		try:
-			x = re.match("RELAY-READ-\\d+,\\d+,(\\d+),OK", result)
-			return x.group(1) == "1"
-		except Exception as e:
-			_LOGGER.error(f'cannot get status for {self.index} - result was: {result}')
-			raise e
+    def __init__(self, hass: HomeAssistant, host: str, port: int) -> None:
+        self._hass = hass
+        self.host = host
+        self.port = port
+        self._transport = KTransport(host, port)
+
+    async def async_turn_on(self, channel: int) -> None:
+        connection = KConnection(self._transport, str(channel))
+        await self._hass.async_add_executor_job(connection.turnOn)
+
+    async def async_turn_off(self, channel: int) -> None:
+        connection = KConnection(self._transport, str(channel))
+        await self._hass.async_add_executor_job(connection.turnOff)
+
+    async def async_get_status(self, channel: int) -> bool:
+        connection = KConnection(self._transport, str(channel))
+        return await self._hass.async_add_executor_job(connection.getStatus)
+
+    async def async_ping(self) -> None:
+        connection = KConnection(self._transport, "1")
+        await self._hass.async_add_executor_job(connection.send2KWithLock, "test")
+
+    async def async_get_channel_count(self) -> int | None:
+        """Try to read channel count via scan command."""
+
+        def _scan() -> int | None:
+            connection = KConnection(self._transport, "1")
+            result = connection.send2KWithLock("scan")
+            match = re.match(r"RELAY-SCAN_DEVICE-CHANNEL_(\d+),OK", result)
+            if match:
+                return int(match.group(1))
+            return None
+
+        return await self._hass.async_add_executor_job(_scan)
+
+
+async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
+    """Set up the Kincony integration (config entries only)."""
+    hass.data.setdefault(DOMAIN, {})
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Kincony from a config entry."""
+    hass.data.setdefault(DOMAIN, {})
+
+    host = entry.data[CONF_HOST]
+    port = entry.data.get(CONF_PORT, DEFAULT_PORT)
+    client = KinconyClient(hass, host, port)
+
+    try:
+        await client.async_ping()
+    except Exception as exc:
+        raise ConfigEntryNotReady from exc
+
+    hass.data[DOMAIN][entry.entry_id] = client
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+    return unload_ok

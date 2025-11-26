@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Kincony SHA",
+        "description": "Enter the host/IP of your Kincony SHA board.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect; check the address and try again.",
+      "unknown": "Unexpected error"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "channel_count": "Number of relays to expose"
+        }
+      }
+    }
+  }
+}
