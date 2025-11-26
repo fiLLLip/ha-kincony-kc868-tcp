@@ -1,5 +1,5 @@
 {
-  "domain": "kincony-sha",
+  "domain": "kincony_kc868_tcp",
   "name": "Kincony KC868 TCP",
   "documentation": "https://github.com/fiLLLip/ha-kincony-kc868-tcp",
   "requirements": [],
