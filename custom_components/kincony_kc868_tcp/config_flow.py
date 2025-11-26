@@ -109,7 +109,8 @@ class KinconyOptionsFlowHandler(config_entries.OptionsFlow):
             )
 
         current_count = self.config_entry.options.get(
-            CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT
+            CONF_CHANNEL_COUNT,
+            self.config_entry.data.get(CONF_CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT),
         )
         return self.async_show_form(
             step_id="init",

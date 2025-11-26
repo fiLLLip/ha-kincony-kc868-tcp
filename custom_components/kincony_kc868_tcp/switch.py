@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -48,19 +50,34 @@ class KinconySwitch(SwitchEntity):
             configuration_url=f"http://{client.host}",
         )
         self._attr_is_on = False
+        self._attr_available = True
 
     async def async_update(self) -> None:
         try:
             self._attr_is_on = await self._client.async_get_status(self._channel)
+            self._attr_available = True
         except Exception as err:
             _LOGGER.error(
                 "Failed to poll channel %s on %s: %s", self._channel, self._client.host, err
             )
+            self._attr_available = False
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._client.async_turn_on(self._channel)
+        try:
+            await self._client.async_turn_on(self._channel)
+        except Exception as err:
+            self._attr_available = False
+            raise HomeAssistantError(f"Failed to turn on channel {self._channel}") from err
+
         self._attr_is_on = True
+        self._attr_available = True
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._client.async_turn_off(self._channel)
+        try:
+            await self._client.async_turn_off(self._channel)
+        except Exception as err:
+            self._attr_available = False
+            raise HomeAssistantError(f"Failed to turn off channel {self._channel}") from err
+
         self._attr_is_on = False
+        self._attr_available = True

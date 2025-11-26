@@ -7,6 +7,7 @@ import re
 import socket
 import threading
 import time
+import contextlib
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -30,7 +31,7 @@ class KTransport:
         self.connected = False
 
     def _send(self, command: str) -> None:
-        self.s.sendto(command.encode(), self.address)
+        self.s.sendall(command.encode())
 
     def _read(self) -> str:
         return self.s.recv(1024).decode("utf-8")
@@ -49,6 +50,8 @@ class KTransport:
         try:
             self._send(command)
         except BrokenPipeError:
+            with contextlib.suppress(OSError):
+                self.s.close()
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.s.settimeout(5)
             self.connected = False
@@ -58,12 +61,20 @@ class KTransport:
         try:
             result = self._read()
         except Exception as exc:
+            with contextlib.suppress(OSError):
+                self.s.close()
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.s.settimeout(5)
             self.connected = False
             raise ConnectionError("Socket read error") from exc
 
         return result
+
+    def close(self) -> None:
+        with self.lock:
+            with contextlib.suppress(OSError):
+                self.s.close()
+            self.connected = False
 
 
 class KConnection:
@@ -160,6 +171,10 @@ class KinconyClient:
 
         return await self._hass.async_add_executor_job(_scan)
 
+    def close(self) -> None:
+        """Close the underlying transport."""
+        self._transport.close()
+
 
 async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
     """Set up the Kincony integration (config entries only)."""
@@ -187,7 +202,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    client: KinconyClient | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        if client:
+            client.close()
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
